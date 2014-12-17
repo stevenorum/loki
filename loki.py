@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import base64
 import boto.ec2
 
@@ -41,10 +42,36 @@ def ensure_keypair_exists(public_key,keyname='loki',region='us-east-1',access_ke
     return (lambda conn: conn.get_key_pair(keyname) if conn.get_key_pair(keyname) else conn.import_key_pair(key_name=keyname, public_key_material=public_key))(get_ec2_conn(region,access_key,secret_key))
 
 def launch_loki(public_key,keyname='loki',region='us-east-1',access_key=None,secret_key=None):
-    return get_ec2_conn(region,access_key,secret_key).run_instances(image_id=[_region['ami'] for _region in get_all_region_info() if _region['Name'] == region][0], key_name=ensure_keypair_exists(public_key,'loki',region,access_key,secret_key).name, user_data=None, instance_type='t1.micro', disable_api_termination=True, dry_run=True)
+    return get_ec2_conn(region,access_key,secret_key).run_instances(image_id=[_region['ami'] for _region in get_all_region_info() if _region['Name'] == region][0], key_name=ensure_keypair_exists(public_key,'loki',region,access_key,secret_key).name, user_data=get_encoded_userdata(), instance_type='t1.micro', disable_api_termination=True, dry_run=True)
 
 def get_encoded_userdata():
     return base64.b64encode(get_unencoded_userdata())
 
 def get_unencoded_userdata():
     return "#!/bin/bash\nmkdir -p /home/ec2-user/loki\nyum install python27 -y\nrm /usr/bin/python\nln -s /usr/bin/python2.7 /usr/bin/python\ncp /usr/bin/yum /usr/bin/_yum_before_27\nsed -i s/python/python2.6/g /usr/bin/yum\nsed -i s/python2.6/python2.6/g /usr/bin/yum\nwget https://bootstrap.pypa.io/ez_setup.py -O - | sudo python\neasy_install-2.7 pip\npip install boto --upgrade\necho \"{0}\" | base64 --decode > /home/ec2-user/loki/loki.py\necho \"* * * * * /home/ec2-user/loki/loki.py\" > /etc/cron.d/loki".format(base64.b64encode(open('/home/ec2-user/loki/loki.py', 'r').read()))
+
+access_key = None # use .boto or instance metadata
+secret_key = None # use .boto or instance metadata
+ssh_key = None # already in EC2 for this account; will be added here when I get it off my other computer
+
+#lokis_to_launch = 4 - len(get_regions_with_loki_instances(access_key,secret_key))
+
+#empty_regions = get_regions_with_no_instances(access_key,secret_key)
+
+#if len(empty_regions) >= lokis_to_launch:
+#    for region in empty_regions[0:lokis_to_launch]:
+#        print dir(ensure_keypair_exists(ssh_key,'loki',region,access_key,secret_key))
+#        launch_loki(ssh_key,'loki',region, access_key, secret_key)
+#else:
+#    regions = get_regions_sorted_by_most_instances(access_key,secret_key)
+#    for region in regions[0:lokis_to_launch]:
+#        print dir(ensure_keypair_exists(ssh_key,'loki',region,access_key,secret_key))
+#        launch_loki(ssh_key,'loki',region, access_key, secret_key)
+region='us-east-1'
+launch_loki(public_key=ssh_key,keyname='loki',region=region,access_key=access_key,secret_key=secret_key)
+#print get_unencoded_userdata()
+
+#for region in get_all_regions():
+#    print region
+#    print "Instances: " + str(get_instance_count(region, access_key, secret_key))
+#    print "Lokis: " + str(get_loki_count(region, access_key, secret_key))
